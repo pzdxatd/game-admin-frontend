@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Player Registration</title>
+    <meta name="robots" content="noindex, nofollow"> <!-- Prevent search engine indexing -->
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a2e; /* Dark background */
+            color: #e0e0e0; /* Light text */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #16213e; /* Slightly lighter dark for container */
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+            border: 1px solid #0f3460; /* Subtle border */
+        }
+        h1 {
+            color: #e94560; /* Accent color for heading */
+            margin-bottom: 30px;
+            font-size: 2.2em;
+            letter-spacing: 1px;
+        }
+        .form-group {
+            margin-bottom: 25px;
+            text-align: left;
+        }
+        label {
+            display: block;
+            margin-bottom: 10px;
+            color: #b0b0b0;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+        input[type="text"] {
+            width: calc(100% - 24px);
+            padding: 14px;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            font-size: 1.1em;
+            background-color: #0f3460; /* Dark input background */
+            color: #e0e0e0;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        input[type="text"]:focus {
+            border-color: #e94560;
+            box-shadow: 0 0 0 3px rgba(233, 69, 96, 0.3);
+            outline: none;
+        }
+        button {
+            background-color: #e94560;
+            color: white;
+            padding: 15px 25px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1.2em;
+            width: 100%;
+            font-weight: 700;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+        button:hover {
+            background-color: #b82c44;
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .message {
+            margin-top: 30px;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1em;
+            display: none; /* Hidden by default */
+        }
+        .message.success {
+            background-color: #2e8b57; /* Darker green */
+            color: #d4edda;
+            border: 1px solid #1e6e3e;
+        }
+        .message.error {
+            background-color: #a02020; /* Darker red */
+            color: #f8d7da;
+            border: 1px solid #801010;
+        }
+        small {
+            display: block;
+            margin-top: 8px;
+            color: #888;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Player Registration</h1>
+        <form id="registrationForm">
+            <div class="form-group">
+                <label for="playerName">Player Name:</label>
+                <input type="text" id="playerName" name="playerName" required>
+            </div>
+            <div class="form-group">
+                <label for="linkedinName">LinkedIn Name:</label>
+                <input type="text" id="linkedinName" name="linkedinName" required>
+                <small>This must be unique.</small>
+            </div>
+            <button type="submit">Register</button>
+        </form>
+        <div id="message" class="message"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('registrationForm');
+        const playerNameInput = document.getElementById('playerName');
+        const linkedinNameInput = document.getElementById('linkedinName');
+        const messageDiv = document.getElementById('message');
+
+        // IMPORTANT: Replace this with the actual URL of your Railway backend service
+        const RAILWAY_BACKEND_URL = 'https://td-backend-api-production.up.railway.app'; // <--- UPDATE THIS!
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault(); // Prevent default form submission
+
+            messageDiv.style.display = 'none'; // Hide previous messages
+
+            const name = playerNameInput.value.trim();
+            const linkedin = linkedinNameInput.value.trim();
+
+            if (!name || !linkedin) {
+                displayMessage('Please fill in all fields.', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${RAILWAY_BACKEND_URL}/api/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name, linkedin }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) { // HTTP status 200-299
+                    displayMessage(result.message || 'Registration successful!', 'success');
+                    form.reset(); // Clear the form
+                } else {
+                    displayMessage(result.error || 'Registration failed. Please try again.', 'error');
+                }
+            } catch (error) {
+                console.error('Network or server error:', error);
+                displayMessage('Could not connect to the server. Please check your internet connection or try again later.', 'error');
+            }
+        });
+
+        function displayMessage(text, type) {
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
