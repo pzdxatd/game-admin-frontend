@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Control Panel</title>
+    <meta name="robots" content="noindex, nofollow">
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #282c34; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .container { background-color: #3a3f4a; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5); width: 100%; max-width: 600px; text-align: center; }
+        h1 { color: #61dafb; margin-bottom: 25px; font-size: 2.2em; }
+        .section { background-color: #4a4f59; padding: 20px; border-radius: 6px; margin-bottom: 20px; text-align: left; }
+        .section h2 { color: #61dafb; margin-top: 0; margin-bottom: 15px; font-size: 1.5em; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 8px; color: #b0b0b0; font-weight: bold; }
+        select, button { width: 100%; padding: 10px; border-radius: 4px; font-size: 1em; margin-bottom: 10px; }
+        select { background-color: #282c34; color: #e0e0e0; border: 1px solid #555; }
+        button { background-color: #007bff; color: white; border: none; cursor: pointer; transition: background-color 0.3s ease; }
+        button:hover { background-color: #0056b3; }
+        button.red { background-color: #dc3545; }
+        button.red:hover { background-color: #c82333; }
+        #gameStatusDisplay { margin-top: 20px; padding: 15px; border-radius: 6px; font-size: 1.1em; font-weight: bold; }
+        #gameStatusDisplay.in-progress { background-color: #ffc107; color: #333; }
+        #gameStatusDisplay.finished { background-color: #28a745; color: white; }
+        #gameStatusDisplay.error { background-color: #dc3545; color: white; }
+        #gameStatusDisplay.idle { background-color: #6c757d; color: white; }
+        .message { margin-top: 15px; padding: 10px; border-radius: 4px; font-weight: bold; display: none; }
+        .message.success { background-color: #28a745; color: white; }
+        .message.error { background-color: #dc3545; color: white; }
+        .logout-btn { background-color: #6c757d; margin-top: 20px; }
+        .logout-btn:hover { background-color: #5a6268; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Game Control Panel</h1>
+        <p>Logged in as: <span id="loggedInUser"></span> (Role: <span id="userRole"></span>)</p>
+
+        <div id="playerSelectionSection" class="section">
+            <h2>Select Players</h2>
+            <div class="form-group">
+                <label for="bluePlayerSelect">Blue Player:</label>
+                <select id="bluePlayerSelect"></select>
+            </div>
+            <div class="form-group">
+                <label for="redPlayerSelect">Red Player:</label>
+                <select id="redPlayerSelect"></select>
+            </div>
+            <button id="refreshQueueBtn">Refresh Queue</button>
+            <button id="startGameBtn">Start Game</button>
+            <div id="selectionMessage" class="message"></div>
+        </div>
+
+        <div id="gameInProgressSection" class="section" style="display: none;">
+            <h2>Current Game</h2>
+            <div id="gameStatusDisplay" class="idle">No Active Game</div>
+            <div id="gameFinishedActions" style="display: none;">
+                <p>Blue Player Time: <span id="blueTime"></span></p>
+                <p>Red Player Time: <span id="redTime"></span></p>
+                <button id="approveGameBtn">Approve Results</button>
+                <button id="rejectGameBtn" class="red">Reject Game</button>
+            </div>
+            <div id="gameActionMessage" class="message"></div>
+        </div>
+        
+        <button id="logoutBtn" class="logout-btn">Logout</button>
+    </div>
+
+    <script>
+        const RAILWAY_BACKEND_URL = 'https://td-backend-api-production.up.railway.app'; // <--- UPDATE THIS!
+        const POLL_INTERVAL = 3000; // Poll every 3 seconds
+
+        const bluePlayerSelect = document.getElementById('bluePlayerSelect');
+        const redPlayerSelect = document.getElementById('redPlayerSelect');
+        const refreshQueueBtn = document.getElementById('refreshQueueBtn');
+        const startGameBtn = document.getElementById('startGameBtn');
+        const selectionMessage = document.getElementById('selectionMessage');
+
+        const gameInProgressSection = document.getElementById('gameInProgressSection');
+        const playerSelectionSection = document.getElementById('playerSelectionSection');
+        const gameStatusDisplay = document.getElementById('gameStatusDisplay');
+        const gameFinishedActions = document.getElementById('gameFinishedActions');
+        const blueTimeSpan = document.getElementById('blueTime');
+        const redTimeSpan = document.getElementById('redTime');
+        const approveGameBtn = document.getElementById('approveGameBtn');
+        const rejectGameBtn = document.getElementById('rejectGameBtn');
+        const gameActionMessage = document.getElementById('gameActionMessage');
+
+        const loggedInUserSpan = document.getElementById('loggedInUser');
+        const userRoleSpan = document.getElementById('userRole');
+        const logoutBtn = document.getElementById('logoutBtn');
+
+        let currentQueuedPlayers = [];
+        let pollingIntervalId;
+        let activeGameId = null;
+
+        // --- Authentication & Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem('authToken');
+            const userRole = localStorage.getItem('userRole');
+
+            if (!token || userRole !== 'admin') { // Only admins can access this panel
+                alert('Unauthorized access. Please log in as an administrator.');
+                window.location.href = 'login.html';
+                return;
+            }
+
+            loggedInUserSpan.textContent = localStorage.getItem('username') || 'Admin'; // Assuming you stored username during login
+            userRoleSpan.textContent = userRole;
+
+            logoutBtn.addEventListener('click', () => {
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('userRole');
+                localStorage.removeItem('username');
+                window.location.href = 'login.html';
+            });
+
+            fetchQueuedPlayers(); // Initial fetch
+            startPollingGameStatus(); // Start checking game status
+        });
+
+        // --- Helper Functions ---
+        function getAuthHeaders() {
+            const token = localStorage.getItem('authToken');
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
+        }
+
+        function displayMessage(element, text, type) {
+            element.textContent = text;
+            element.className = `message ${type}`;
+            element.style.display = 'block';
+            setTimeout(() => element.style.display = 'none', 5000); // Hide after 5 seconds
+        }
+
+        function resetUI() {
+            playerSelectionSection.style.display = 'block';
+            gameInProgressSection.style.display = 'none';
+            gameStatusDisplay.className = 'idle';
+            gameStatusDisplay.textContent = 'No Active Game';
+            gameFinishedActions.style.display = 'none';
+            selectionMessage.style.display = 'none';
+            gameActionMessage.style.display = 'none';
+            activeGameId = null;
+            fetchQueuedPlayers(); // Refresh queue after game cycle
+        }
+
+        // --- Player Queue Management ---
+        async function fetchQueuedPlayers() {
+            try {
+                const response = await fetch(`${RAILWAY_BACKEND_URL}/api/players/queue`); // Public endpoint
+                const players = await response.json();
+
+                currentQueuedPlayers = players;
+                bluePlayerSelect.innerHTML = '<option value="">Select Blue Player</option>';
+                redPlayerSelect.innerHTML = '<option value="">Select Red Player</option>';
+
+                players.forEach(player => {
+                    const option = `<option value="${player.id}">${player.name} (${player.linkedin})</option>`;
+                    bluePlayerSelect.innerHTML += option;
+                    redPlayerSelect.innerHTML += option;
+                });
+
+            } catch (error) {
+                console.error('Error fetching queued players:', error);
+                displayMessage(selectionMessage, 'Failed to load players. Please refresh.', 'error');
+            }
+        }
+
+        refreshQueueBtn.addEventListener('click', fetchQueuedPlayers);
+
+        // --- Game Start ---
+        startGameBtn.addEventListener('click', async () => {
+            const bluePlayerId = bluePlayerSelect.value;
+            const redPlayerId = redPlayerSelect.value;
+
+            if (!bluePlayerId || !redPlayerId) {
+                displayMessage(selectionMessage, 'Please select both blue and red players.', 'error');
+                return;
+            }
+            if (bluePlayerId === redPlayerId) {
+                displayMessage(selectionMessage, 'Blue and Red players cannot be the same.', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${RAILWAY_BACKEND_URL}/api/game/start`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ bluePlayerId: parseInt(bluePlayerId), redPlayerId: parseInt(redPlayerId) }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    displayMessage(selectionMessage, result.message, 'success');
+                    activeGameId = result.game.id;
+                    // Switch UI to game in progress state
+                    playerSelectionSection.style.display = 'none';
+                    gameInProgressSection.style.display = 'block';
+                    gameStatusDisplay.className = 'in-progress';
+                    gameStatusDisplay.textContent = `Game in Progress! Players: ${result.game.blue_player_name} vs ${result.game.red_player_name}`;
+                } else {
+                    displayMessage(selectionMessage, result.error || 'Failed to start game.', 'error');
+                }
+            } catch (error) {
+                console.error('Error starting game:', error);
+                displayMessage(selectionMessage, 'Network error. Could not start game.', 'error');
+            }
+        });
+
+        // --- Game Status Polling ---
+        async function pollGameStatus() {
+            try {
+                const response = await fetch(`${RAILWAY_BACKEND_URL}/api/game/current_status`);
+                const gameStatus = await response.json();
+
+                if (gameStatus.status === 'no_active_game') {
+                    if (activeGameId !== null) { // Game was active, now finished/approved/rejected
+                        resetUI();
+                    }
+                    gameStatusDisplay.className = 'idle';
+                    gameStatusDisplay.textContent = 'No Active Game';
+                } else {
+                    activeGameId = gameStatus.game_id; // Keep track of the active game ID
+                    playerSelectionSection.style.display = 'none';
+                    gameInProgressSection.style.display = 'block';
+
+                    if (gameStatus.status === 'pending_start' || gameStatus.status === 'playing') {
+                        gameStatusDisplay.className = 'in-progress';
+                        gameStatusDisplay.textContent = `Game in Progress! Players: ${gameStatus.blue_player_name} vs ${gameStatus.red_player_name}`;
+                        gameFinishedActions.style.display = 'none';
+                    } else if (gameStatus.status === 'finished_waiting_approval') {
+                        gameStatusDisplay.className = 'finished';
+                        gameStatusDisplay.textContent = `Game Finished! Waiting for Approval.`;
+                        blueTimeSpan.textContent = gameStatus.blue_player_time;
+                        redTimeSpan.textContent = gameStatus.red_player_time;
+                        gameFinishedActions.style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                console.error('Error polling game status:', error);
+                gameStatusDisplay.className = 'error';
+                gameStatusDisplay.textContent = 'Error fetching game status.';
+            }
+        }
+
+        function startPollingGameStatus() {
+            if (pollingIntervalId) clearInterval(pollingIntervalId); // Clear any existing interval
+            pollingIntervalId = setInterval(pollGameStatus, POLL_INTERVAL);
+        }
+
+        // --- Game Approval / Rejection ---
+        approveGameBtn.addEventListener('click', async () => {
+            if (!activeGameId) return;
+            try {
+                const response = await fetch(`${RAILWAY_BACKEND_URL}/api/game/approve`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ gameId: activeGameId }),
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    displayMessage(gameActionMessage, result.message, 'success');
+                    resetUI(); // Reset UI and refresh queue
+                } else {
+                    displayMessage(gameActionMessage, result.error || 'Failed to approve game.', 'error');
+                }
+            } catch (error) {
+                console.error('Error approving game:', error);
+                displayMessage(gameActionMessage, 'Network error. Could not approve game.', 'error');
+            }
+        });
+
+        rejectGameBtn.addEventListener('click', async () => {
+            if (!activeGameId) return;
+            if (!confirm('Are you sure you want to reject this game? Players will be returned to the queue.')) {
+                return;
+            }
+            try {
+                const response = await fetch(`${RAILWAY_BACKEND_URL}/api/game/reject`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ gameId: activeGameId }),
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    displayMessage(gameActionMessage, result.message, 'success');
+                    resetUI(); // Reset UI and refresh queue
+                } else {
+                    displayMessage(gameActionMessage, result.error || 'Failed to reject game.', 'error');
+                }
+            } catch (error) {
+                console.error('Error rejecting game:', error);
+                displayMessage(gameActionMessage, 'Network error. Could not reject game.', 'error');
+            }
+        });
+
+    </script>
+</body>
+</html>
