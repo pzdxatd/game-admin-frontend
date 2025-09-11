@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel</title>
+    <meta name="robots" content="noindex, nofollow">
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f4; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); width: 100%; max-width: 600px; text-align: center; }
+        h1 { color: #333; margin-bottom: 20px; }
+        p { color: #555; margin-bottom: 20px; }
+        button { background-color: #dc3545; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #c82333; }
+        #protectedContent { margin-top: 20px; padding: 15px; border: 1px solid #007bff; background-color: #e7f0ff; color: #0056b3; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to the Admin Panel!</h1>
+        <p>You are logged in as: <span id="loggedInUser"></span> (Role: <span id="userRole"></span>)</p>
+        <button id="logoutButton">Logout</button>
+
+        <div id="protectedContent">
+            This content is only visible to logged-in administrators.
+            <p>Here you would put your player selection, game start, and time approval controls.</p>
+            <button id="testProtectedApi">Test Protected API Call</button>
+            <p id="apiResponse"></p>
+        </div>
+    </div>
+
+    <script>
+        const RAILWAY_BACKEND_URL = 'https://td-backend-api-production.up.railway.app'; // <--- UPDATE THIS!
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem('authToken');
+            const userRole = localStorage.getItem('userRole');
+            const loggedInUserSpan = document.getElementById('loggedInUser');
+            const userRoleSpan = document.getElementById('userRole');
+            const logoutButton = document.getElementById('logoutButton');
+            const testProtectedApiButton = document.getElementById('testProtectedApi');
+            const apiResponseParagraph = document.getElementById('apiResponse');
+
+            if (!token) {
+                alert('You are not logged in. Redirecting to login page.');
+                window.location.href = 'login.html';
+                return;
+            }
+
+            // Display user info (assuming you store username or get it from a /me endpoint)
+            // For simplicity, we'll just display role here.
+            // In a real app, you'd decode the JWT or call a /me endpoint to get username.
+            loggedInUserSpan.textContent = "Admin"; // Placeholder
+            userRoleSpan.textContent = userRole || "Unknown";
+
+
+            logoutButton.addEventListener('click', () => {
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('userRole');
+                window.location.href = 'login.html';
+            });
+
+            testProtectedApiButton.addEventListener('click', async () => {
+                apiResponseParagraph.textContent = 'Calling protected API...';
+                try {
+                    const response = await fetch(`${RAILWAY_BACKEND_URL}/api/game/start`, { // Using the protected /api/game/start
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}` // Include the JWT
+                        },
+                        body: JSON.stringify({ /* No actual data needed for this test */ })
+                    });
+
+                    const result = await response.json();
+                    if (response.ok) {
+                        apiResponseParagraph.textContent = `Protected API Success: ${result.message}`;
+                    } else {
+                        apiResponseParagraph.textContent = `Protected API Error: ${result.error || 'Unknown error'}`;
+                        if (response.status === 401 || response.status === 403) {
+                            alert('Session expired or unauthorized. Please log in again.');
+                            localStorage.removeItem('authToken');
+                            localStorage.removeItem('userRole');
+                            window.location.href = 'login.html';
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error calling protected API:', error);
+                    apiResponseParagraph.textContent = 'Network error when calling protected API.';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
